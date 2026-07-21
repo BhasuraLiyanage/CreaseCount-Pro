@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CreaseCount - Advanced Cricket Scorer</title>
+  <link rel="stylesheet" href="style.css">
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- 1. DYNAMIC SETUP SCREEN -->
+    <div id="setup-screen" class="screen">
+      <h2>Configure Teams</h2>
+      <p class="subtitle">Enter player names in batting order.</p>
+      
+      <div class="team-setup-container">
+        <!-- Team 1 -->
+        <div class="team-box">
+          <input type="text" id="team1-name" placeholder="Enter Team 1 Name (e.g. Sri Lanka)" class="team-name-input">
+          <div id="team1-players" class="player-list">
+            <div class="player-input-row">
+              <input type="text" class="player-input" placeholder="Opening Batter 1" required>
+            </div>
+            <div class="player-input-row">
+              <input type="text" class="player-input" placeholder="Opening Batter 2" required>
+            </div>
+          </div>
+          <button id="add-team1-player" class="btn secondary-btn mt-1">+ Add Player</button>
+        </div>
+
+        <!-- Team 2 -->
+        <div class="team-box mt-3">
+          <input type="text" id="team2-name" placeholder="Enter Team 2 Name (e.g. India)" class="team-name-input">
+          <div id="team2-players" class="player-list">
+            <div class="player-input-row">
+              <input type="text" class="player-input" placeholder="Opening Batter 1" required>
+            </div>
+            <div class="player-input-row">
+              <input type="text" class="player-input" placeholder="Opening Batter 2" required>
+            </div>
+          </div>
+          <button id="add-team2-player" class="btn secondary-btn mt-1">+ Add Player</button>
+        </div>
+      </div>
+      
+      <button id="start-match-btn" class="btn primary-btn mt-3">Start Match & Toss</button>
+    </div>
+
+    <!-- 2. LIVE MATCH DASHBOARD -->
+    <div id="match-screen" class="screen hidden">
+      <h2 id="innings-title">1st Innings</h2>
+      <!-- Series Score Tracker -->
+      <div id="series-score-display" class="subtitle hidden" style="color:var(--warning-color); font-weight:bold;"></div>
+      
+      <div class="scoreboard-display">
+        <div class="score"><span id="display-runs">0</span> / <span id="display-wickets">0</span></div>
+        <div class="overs">Overs: <span id="display-overs">0.0</span></div>
+        <div id="target-container" class="hidden">Target: <span id="display-target"></span></div>
+      </div>
+      
+      <div id="crease-console" class="crease-console mt-2">
+        <div class="batter-row">
+          <span class="indicator">Striker *</span>
+          <span id="striker-name" class="player-name">--</span>
+          <span id="striker-stats" class="player-stats">0 (0)</span>
+        </div>
+        <div class="batter-row">
+          <span class="indicator">Non-Striker</span>
+          <span id="non-striker-name" class="player-name">--</span>
+          <span id="non-striker-stats" class="player-stats">0 (0)</span>
+        </div>
+        <hr class="console-divider">
+        <div class="bowler-row">
+          <span class="indicator">Bowler</span>
+          <span id="bowler-name" class="player-name">--</span>
+          <span id="bowler-stats" class="player-stats">0.0-0-0-0</span>
+        </div>
+        <button id="manual-swap-btn" class="btn action-btn mt-2">Manual Swap Strike</button>
+      </div>
+
+      <div class="scoring-buttons mt-3">
+        <button class="btn score-btn" onclick="handleScoreAction(0, 1)">Dot (0)</button>
+        <button class="btn score-btn" onclick="handleScoreAction(1, 1)">+1</button>
+        <button class="btn score-btn" onclick="handleScoreAction(2, 1)">+2</button>
+        <button class="btn score-btn" onclick="handleScoreAction(3, 1)">+3</button>
+        <button class="btn score-btn" onclick="handleScoreAction(4, 1)">+4</button>
+        <button class="btn score-btn" onclick="handleScoreAction(6, 1)">+6</button>
+        <button class="btn score-btn wicket-btn" onclick="openRunsModal('out')">Wicket</button>
+        <button class="btn score-btn extra-btn" onclick="openRunsModal('ex')">Extra</button>
+      </div>
+
+      <!-- Controls & Series Continuation -->
+      <div class="control-buttons mt-3">
+        <button id="undo-btn" class="btn control-btn">Undo</button>
+        <button id="overs-view-btn" class="btn control-btn">Overs</button>
+        <button id="scorecard-btn" class="btn control-btn primary-btn">Scorecard</button>
+        <button id="complete-btn" class="btn control-btn">End Innings</button>
+      </div>
+      
+      <!-- Match Management Buttons -->
+      <button id="retire-btn" class="btn control-btn mt-2" style="width: 100%; border: 1px dashed #f59e0b; color: #f59e0b;">Retire Hurt (Change Batter)</button>
+      <button id="add-mid-player-btn" class="btn control-btn mt-2" style="width: 100%; border: 1px dashed var(--text-muted); color: var(--text-muted);">+ Add Player Mid-Match</button>
+      <button id="remove-mid-player-btn" class="btn control-btn mt-2" style="width: 100%; border: 1px dashed var(--danger-color); color: var(--danger-color);">- Remove Player Mid-Match</button>
+      
+      <button id="next-match-btn" class="btn control-btn mt-2 hidden" style="width: 100%; border: 2px solid var(--warning-color); color: var(--warning-color); font-weight: bold;">Play Next Match (Series)</button>
+      <button id="reset-btn" class="btn control-btn danger-btn mt-2" style="width: 100%;">Reset Everything</button>
+    </div>
+
+  </div>
+
+  <!-- 3. MODALS & POPUPS -->
+  <div id="runs-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Select Runs</h3>
+      <p id="modal-desc"></p>
+      <div id="dynamic-runs-options" class="modal-options"></div>
+    </div>
+  </div>
+
+  <div id="overs-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Overs History</h3>
+      <div id="overs-log-container" class="overs-log"></div>
+      <button id="close-overs-btn" class="btn secondary-btn mt-2">Close</button>
+    </div>
+  </div>
+
+  <div id="scorecard-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Match Scorecard</h3>
+      <div id="scorecard-container" class="scorecard-container mt-2"></div>
+      <button id="close-scorecard-btn" class="btn primary-btn mt-3">Close Scorecard</button>
+    </div>
+  </div>
+
+  <div id="player-selection-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3 id="selection-title">Select Player</h3>
+      <p id="selection-desc" class="modal-subtitle">Who is stepping up?</p>
+      <div id="selection-grid" class="selection-grid mt-2"></div>
+    </div>
+  </div>
+  
+  <!-- Mid-Match Player Injection Modal -->
+  <div id="add-player-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Add New Player</h3>
+      <p class="modal-subtitle">Who is joining the squad?</p>
+      <select id="mid-player-team" style="width:100%; padding:10px; background:#0f172a; color:white; border: 1px solid #334155; border-radius:4px; margin-bottom: 10px;">
+      </select>
+      <input type="text" id="mid-player-name" class="player-input" placeholder="Enter Player Name" required>
+      <button id="submit-mid-player-btn" class="btn primary-btn mt-3">Add to Team</button>
+      <button id="cancel-mid-player-btn" class="btn secondary-btn mt-2">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Mid-Match Player Removal Modal -->
+  <div id="remove-player-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Remove Player</h3>
+      <p class="modal-subtitle">Select a player to remove from the squad.</p>
+      <div id="remove-player-grid" class="selection-grid mt-2"></div>
+      <button id="cancel-remove-player-btn" class="btn secondary-btn mt-3">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Toss / Batting Order Modal -->
+  <div id="toss-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Match Setup</h3>
+      <p class="modal-subtitle">Who is batting first?</p>
+      <div style="display: flex; gap: 10px; margin-top: 15px;">
+        <button id="bat-first-t1-btn" class="btn primary-btn">Team 1</button>
+        <button id="bat-first-t2-btn" class="btn primary-btn">Team 2</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ad-banner mt-3" id="ad-space"></div>
+  <div class="footer-support mt-3">
+    <button id="support-trigger" class="btn support-btn">Support the Dev via PayPal</button>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
