@@ -56,8 +56,15 @@
       
       <div class="scoreboard-display">
         <div class="score"><span id="display-runs">0</span> / <span id="display-wickets">0</span></div>
-        <div class="overs">Overs: <span id="display-overs">0.0</span></div>
-        <div id="target-container" class="hidden">Target: <span id="display-target"></span></div>
+        <div class="overs">Overs: <span id="display-overs">0.0</span> / <span id="display-max-overs">0</span></div>
+        
+        <!-- NEW: CRR and RRR Display -->
+        <div class="run-rates mt-1 subtitle">
+          CRR: <span id="display-crr" style="font-weight:bold; color:var(--text-main);">0.00</span> 
+          <span id="rrr-container" class="hidden"> | RRR: <span id="display-rrr" style="font-weight:bold; color:var(--warning-color);">0.00</span></span>
+        </div>
+
+        <div id="target-container" class="hidden mt-1">Target: <span id="display-target"></span></div>
       </div>
       
       <div id="crease-console" class="crease-console mt-2">
@@ -131,7 +138,8 @@
     <div class="modal-content">
       <h3>Match Scorecard</h3>
       <div id="scorecard-container" class="scorecard-container mt-2"></div>
-      <button id="close-scorecard-btn" class="btn primary-btn mt-3">Close Scorecard</button>
+      <button id="export-csv-btn" class="btn secondary-btn mt-3" style="background-color: #10b981; color: white;">Export Data to Excel (CSV)</button>
+      <button id="close-scorecard-btn" class="btn primary-btn mt-2">Close Scorecard</button>
     </div>
   </div>
 
@@ -170,8 +178,14 @@
   <div id="toss-modal" class="modal hidden">
     <div class="modal-content">
       <h3>Match Setup</h3>
+      <p class="modal-subtitle">Configure the match parameters.</p>
+      
+      <!-- NEW: Max Overs Setup -->
+      <label for="toss-max-overs" style="display:block; text-align:left; font-size:0.9rem; color:var(--text-muted);">Overs per Innings:</label>
+      <input type="number" id="toss-max-overs" class="player-input mt-1" placeholder="e.g. 20" value="20" min="1" required style="margin-bottom: 15px;">
+      
       <p class="modal-subtitle">Who is batting first?</p>
-      <div style="display: flex; gap: 10px; margin-top: 15px;">
+      <div style="display: flex; gap: 10px;">
         <button id="bat-first-t1-btn" class="btn primary-btn">Team 1</button>
         <button id="bat-first-t2-btn" class="btn primary-btn">Team 2</button>
       </div>
