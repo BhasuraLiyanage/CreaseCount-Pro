@@ -1,10 +1,11 @@
 let matchState = {
   currentInnings: 1,
   target: null,
-  maxOvers: 20, // NEW: Enforces the innings limit
+  maxOvers: 20,
   isComplete: false,
   seriesScore: { 1: 0, 2: 0 },
   inningsBattingTeam: { 1: 1, 2: 2 }, 
+  matchHistoryArchive: [], // NEW: Stores completed matches for series CSV export
   teams: {
     1: { name: "", players: [] },
     2: { name: "", players: [] }
@@ -30,13 +31,13 @@ const removePlayerModal = document.getElementById("remove-player-modal");
 
 // --- LOCAL STORAGE ---
 function saveToLocalStorage() {
-  localStorage.setItem("creasecount_matchState_v8", JSON.stringify(matchState));
-  localStorage.setItem("creasecount_actionHistory_v8", JSON.stringify(actionHistory));
+  localStorage.setItem("creasecount_matchState_v9", JSON.stringify(matchState));
+  localStorage.setItem("creasecount_actionHistory_v9", JSON.stringify(actionHistory));
 }
 
 function loadFromLocalStorage() {
-  const savedState = localStorage.getItem("creasecount_matchState_v8");
-  const savedHistory = localStorage.getItem("creasecount_actionHistory_v8");
+  const savedState = localStorage.getItem("creasecount_matchState_v9");
+  const savedHistory = localStorage.getItem("creasecount_actionHistory_v9");
   
   if (savedState) {
     matchState = JSON.parse(savedState);
@@ -382,22 +383,18 @@ function submitModalRuns(runsSelected) {
   }
 }
 
-// --- NEW OVER CAP ENFORCER ---
 function checkOverAndInningsEnd(ballsCounted) {
   const inn = matchState.currentInnings;
   const data = matchState.inningsData[inn];
   if (matchState.isComplete) return;
 
-  // Immediate target breach for Innings 2
   if (inn === 2 && matchState.target && data.totalRuns >= matchState.target) { endMatch(getBatTeamId(2)); return; }
 
-  // Check if ball limit is hit
   if (data.totalBalls >= matchState.maxOvers * 6) {
     handleInningsTransition();
     return;
   }
 
-  // End of current over
   if (ballsCounted > 0 && data.totalBalls > 0 && data.totalBalls % 6 === 0) {
     swapStrike(); 
     promptForNewBowler("End of Over", "Select bowler for the new over.", (newBowlerId) => {
@@ -428,6 +425,14 @@ function endMatch(winnerTeamId) {
   matchState.isComplete = true;
   if (winnerTeamId === 1) matchState.seriesScore[1]++;
   else if (winnerTeamId === 2) matchState.seriesScore[2]++;
+
+  // ARCHIVE MATCH DATA FOR SERIES CSV
+  matchState.matchHistoryArchive.push({
+    teams: JSON.parse(JSON.stringify(matchState.teams)),
+    inningsBattingTeam: JSON.parse(JSON.stringify(matchState.inningsBattingTeam)),
+    inningsData: JSON.parse(JSON.stringify(matchState.inningsData)),
+    maxOvers: matchState.maxOvers
+  });
 
   alert(`Match Complete! ${winnerTeamId ? matchState.teams[winnerTeamId].name + " wins!" : "It's a tie!"}`);
   renderScoreboard(); saveToLocalStorage();
@@ -462,7 +467,6 @@ function renderScoreboard() {
   document.getElementById("display-overs").innerText = formatOvers(data.totalBalls);
   document.getElementById("display-max-overs").innerText = matchState.maxOvers;
   
-  // --- Calculate CRR ---
   let crr = "0.00";
   if (data.totalBalls > 0) {
     const actualOvers = data.totalBalls / 6;
@@ -470,7 +474,6 @@ function renderScoreboard() {
   }
   document.getElementById("display-crr").innerText = crr;
 
-  // --- Calculate RRR ---
   if (inn === 2 && matchState.target !== null) {
     document.getElementById("target-container").classList.remove("hidden");
     document.getElementById("display-target").innerText = matchState.target;
@@ -526,11 +529,11 @@ function renderScoreboard() {
 document.getElementById("reset-btn").addEventListener("click", () => {
   if (!confirm("Are you sure you want to completely reset? This will wipe the teams and Series Score too.")) return;
   
-  localStorage.removeItem("creasecount_matchState_v8"); 
-  localStorage.removeItem("creasecount_actionHistory_v8");
+  localStorage.removeItem("creasecount_matchState_v9"); 
+  localStorage.removeItem("creasecount_actionHistory_v9");
   
   matchState = {
-    currentInnings: 1, target: null, maxOvers: 20, isComplete: false, seriesScore: { 1: 0, 2: 0 }, inningsBattingTeam: { 1: 1, 2: 2 },
+    currentInnings: 1, target: null, maxOvers: 20, isComplete: false, seriesScore: { 1: 0, 2: 0 }, inningsBattingTeam: { 1: 1, 2: 2 }, matchHistoryArchive: [],
     teams: { 1: { name: "", players: [] }, 2: { name: "", players: [] } },
     inningsData: {
       1: { totalRuns: 0, wickets: 0, totalBalls: 0, ballHistory: [], activeStrikerId: null, activeNonStrikerId: null, activeBowlerId: null, bowlingStats: {} },
@@ -558,7 +561,7 @@ document.getElementById("reset-btn").addEventListener("click", () => {
   setupScreen.classList.remove("hidden");
 });
 
-// --- OVERS LOG & SCORECARD & CSV EXPORT ---
+// --- OVERS LOG & SCORECARD ---
 document.getElementById("overs-view-btn").addEventListener("click", () => {
   const inn = matchState.currentInnings;
   const history = matchState.inningsData[inn].ballHistory;
@@ -611,45 +614,71 @@ document.getElementById("scorecard-btn").addEventListener("click", () => {
   scorecardModal.classList.remove("hidden");
 });
 
+// --- UPDATED CSV EXPORT (INCLUDES ALL SERIES MATCHES) ---
 document.getElementById("export-csv-btn").addEventListener("click", () => {
   if (!matchState) return;
   let csvRows = [];
-  csvRows.push(["CREASECOUNT MATCH EXPORT"]);
+  
+  csvRows.push(["CREASECOUNT SERIES REPORT"]);
   csvRows.push([]);
   csvRows.push(["SERIES SCORE"]);
   csvRows.push([matchState.teams[1].name, matchState.seriesScore[1], "-", matchState.seriesScore[2], matchState.teams[2].name]);
   csvRows.push([]);
 
-  for (let inn = 1; inn <= 2; inn++) {
-    const data = matchState.inningsData[inn];
-    if (data.totalBalls === 0 && data.totalRuns === 0) continue; 
-    
-    const batTeam = matchState.teams[getBatTeamId(inn)];
-    const bowlTeam = matchState.teams[getBowlTeamId(inn)];
-
-    csvRows.push([`${batTeam.name} INNINGS`, `${data.totalRuns}/${data.wickets}`, `Overs: ${formatOvers(data.totalBalls)} / ${matchState.maxOvers}`]);
-    csvRows.push([]);
-    csvRows.push(["BATTER", "RUNS", "BALLS", "4s", "6s", "STATUS"]);
-    batTeam.players.forEach(p => {
-      if (p.balls > 0 || p.id === data.activeStrikerId || p.id === data.activeNonStrikerId) {
-        let status = p.isOut ? "Out" : "Not Out";
-        csvRows.push([`"${p.name}"`, p.runs, p.balls, p.fours, p.sixes, status]);
-      }
+  // Combine archived matches + the current live match into an export pipeline
+  let allMatchesToExport = [...matchState.matchHistoryArchive];
+  if (matchState.teams[1].name && matchState.teams[2].name) {
+    allMatchesToExport.push({
+      teams: matchState.teams,
+      inningsBattingTeam: matchState.inningsBattingTeam,
+      inningsData: matchState.inningsData,
+      maxOvers: matchState.maxOvers
     });
-    csvRows.push([]);
-
-    csvRows.push(["BOWLER", "OVERS", "RUNS", "WICKETS"]);
-    Object.keys(data.bowlingStats).forEach(bId => {
-      const b = bowlTeam.players.find(x => x.id === bId);
-      if (b) {
-        const s = data.bowlingStats[bId];
-        csvRows.push([`"${b.name}"`, formatOvers(s.balls), s.runs, s.wickets]);
-      }
-    });
-    csvRows.push([]);
-    csvRows.push(["--------------------------------------------------"]);
-    csvRows.push([]);
   }
+
+  allMatchesToExport.forEach((matchObj, matchIndex) => {
+    let matchNum = matchIndex + 1;
+    csvRows.push([`========================================`]);
+    csvRows.push([`MATCH ${matchNum}`]);
+    csvRows.push([`========================================`]);
+    csvRows.push([]);
+
+    for (let inn = 1; inn <= 2; inn++) {
+      const data = matchObj.inningsData[inn];
+      if (!data || (data.totalBalls === 0 && data.totalRuns === 0)) continue;
+      
+      const batTeamId = matchObj.inningsBattingTeam[inn];
+      const bowlTeamId = matchObj.inningsBattingTeam[inn === 1 ? 2 : 1];
+      const batTeam = matchObj.teams[batTeamId];
+      const bowlTeam = matchObj.teams[bowlTeamId];
+
+      if (!batTeam || !bowlTeam) continue;
+
+      csvRows.push([`${batTeam.name} INNINGS`, `${data.totalRuns}/${data.wickets}`, `Overs: ${formatOvers(data.totalBalls)} / ${matchObj.maxOvers}`]);
+      csvRows.push([]);
+      
+      csvRows.push(["BATTER", "RUNS", "BALLS", "4s", "6s", "STATUS"]);
+      batTeam.players.forEach(p => {
+        if (p.balls > 0 || p.runs > 0 || p.isOut) {
+          let status = p.isOut ? "Out" : "Not Out";
+          csvRows.push([`"${p.name}"`, p.runs, p.balls, p.fours, p.sixes, status]);
+        }
+      });
+      csvRows.push([]);
+
+      csvRows.push(["BOWLER", "OVERS", "RUNS", "WICKETS"]);
+      Object.keys(data.bowlingStats).forEach(bId => {
+        const b = bowlTeam.players.find(x => x.id === bId);
+        if (b) {
+          const s = data.bowlingStats[bId];
+          csvRows.push([`"${b.name}"`, formatOvers(s.balls), s.runs, s.wickets]);
+        }
+      });
+      csvRows.push([]);
+      csvRows.push(["--------------------------------------------------"]);
+      csvRows.push([]);
+    }
+  });
 
   const csvContent = csvRows.map(row => row.join(",")).join("\n");
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -657,7 +686,7 @@ document.getElementById("export-csv-btn").addEventListener("click", () => {
   const link = document.createElement("a");
   link.setAttribute("href", url);
   const dateStr = new Date().toISOString().split('T')[0];
-  link.setAttribute("download", `CreaseCount_MatchData_${dateStr}.csv`);
+  link.setAttribute("download", `CreaseCount_SeriesReport_${dateStr}.csv`);
   link.style.display = "none";
   document.body.appendChild(link);
   link.click();
