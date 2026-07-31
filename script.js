@@ -1,6 +1,7 @@
 let matchState = {
   currentInnings: 1,
   target: null,
+  maxOvers: 20, // NEW: Enforces the innings limit
   isComplete: false,
   seriesScore: { 1: 0, 2: 0 },
   inningsBattingTeam: { 1: 1, 2: 2 }, 
@@ -29,13 +30,13 @@ const removePlayerModal = document.getElementById("remove-player-modal");
 
 // --- LOCAL STORAGE ---
 function saveToLocalStorage() {
-  localStorage.setItem("creasecount_matchState_v7", JSON.stringify(matchState));
-  localStorage.setItem("creasecount_actionHistory_v7", JSON.stringify(actionHistory));
+  localStorage.setItem("creasecount_matchState_v8", JSON.stringify(matchState));
+  localStorage.setItem("creasecount_actionHistory_v8", JSON.stringify(actionHistory));
 }
 
 function loadFromLocalStorage() {
-  const savedState = localStorage.getItem("creasecount_matchState_v7");
-  const savedHistory = localStorage.getItem("creasecount_actionHistory_v7");
+  const savedState = localStorage.getItem("creasecount_matchState_v8");
+  const savedHistory = localStorage.getItem("creasecount_actionHistory_v8");
   
   if (savedState) {
     matchState = JSON.parse(savedState);
@@ -118,7 +119,14 @@ document.getElementById("start-match-btn").addEventListener("click", () => {
 
 // --- TOSS & BATTING ORDER LOGIC ---
 function handleTossDecision(battingFirstTeamId) {
+  const maxOversInput = parseInt(document.getElementById("toss-max-overs").value);
+  if (!maxOversInput || maxOversInput < 1) {
+    alert("Please enter a valid number of overs.");
+    return;
+  }
+
   captureState();
+  matchState.maxOvers = maxOversInput;
   matchState.inningsBattingTeam[1] = battingFirstTeamId;
   matchState.inningsBattingTeam[2] = battingFirstTeamId === 1 ? 2 : 1;
   
@@ -176,18 +184,14 @@ document.getElementById("cancel-mid-player-btn").addEventListener("click", () =>
 // --- MID-MATCH PLAYER REMOVAL ---
 document.getElementById("remove-mid-player-btn").addEventListener("click", () => {
   const inn = matchState.currentInnings;
-  const batTeamId = getBatTeamId(inn);
-  const bowlTeamId = getBowlTeamId(inn);
   const activeData = matchState.inningsData[inn];
   
-  // Combine both teams' players for removal selection, ensuring active players aren't accidentally removed
   const grid = document.getElementById("remove-player-grid");
   grid.innerHTML = "";
 
   [1, 2].forEach(teamId => {
     const team = matchState.teams[teamId];
     team.players.forEach(p => {
-      // Prevent deleting active crease players or bowlers to avoid crashes
       const isActive = (p.id === activeData.activeStrikerId || p.id === activeData.activeNonStrikerId || p.id === activeData.activeBowlerId);
       
       const btn = document.createElement("button");
@@ -378,13 +382,22 @@ function submitModalRuns(runsSelected) {
   }
 }
 
+// --- NEW OVER CAP ENFORCER ---
 function checkOverAndInningsEnd(ballsCounted) {
   const inn = matchState.currentInnings;
   const data = matchState.inningsData[inn];
   if (matchState.isComplete) return;
 
+  // Immediate target breach for Innings 2
   if (inn === 2 && matchState.target && data.totalRuns >= matchState.target) { endMatch(getBatTeamId(2)); return; }
 
+  // Check if ball limit is hit
+  if (data.totalBalls >= matchState.maxOvers * 6) {
+    handleInningsTransition();
+    return;
+  }
+
+  // End of current over
   if (ballsCounted > 0 && data.totalBalls > 0 && data.totalBalls % 6 === 0) {
     swapStrike(); 
     promptForNewBowler("End of Over", "Select bowler for the new over.", (newBowlerId) => {
@@ -434,7 +447,7 @@ document.getElementById("next-match-btn").addEventListener("click", () => {
   tossModal.classList.remove("hidden");
 });
 
-// --- DISPLAY RENDERER ---
+// --- DISPLAY RENDERER & RUN RATES ---
 function formatOvers(balls) { return Math.floor(balls / 6) + "." + (balls % 6); }
 
 function renderScoreboard() {
@@ -447,10 +460,33 @@ function renderScoreboard() {
   document.getElementById("display-runs").innerText = data.totalRuns;
   document.getElementById("display-wickets").innerText = data.wickets;
   document.getElementById("display-overs").innerText = formatOvers(data.totalBalls);
+  document.getElementById("display-max-overs").innerText = matchState.maxOvers;
   
-  if (matchState.target !== null) {
+  // --- Calculate CRR ---
+  let crr = "0.00";
+  if (data.totalBalls > 0) {
+    const actualOvers = data.totalBalls / 6;
+    crr = (data.totalRuns / actualOvers).toFixed(2);
+  }
+  document.getElementById("display-crr").innerText = crr;
+
+  // --- Calculate RRR ---
+  if (inn === 2 && matchState.target !== null) {
     document.getElementById("target-container").classList.remove("hidden");
     document.getElementById("display-target").innerText = matchState.target;
+    
+    document.getElementById("rrr-container").classList.remove("hidden");
+    const runsRequired = matchState.target - data.totalRuns;
+    const ballsRemaining = (matchState.maxOvers * 6) - data.totalBalls;
+    let rrr = "0.00";
+    if (ballsRemaining > 0) {
+      const oversRemaining = ballsRemaining / 6;
+      rrr = (runsRequired / oversRemaining).toFixed(2);
+    }
+    document.getElementById("display-rrr").innerText = rrr;
+  } else {
+    document.getElementById("target-container").classList.add("hidden");
+    document.getElementById("rrr-container").classList.add("hidden");
   }
 
   const seriesDiv = document.getElementById("series-score-display");
@@ -490,11 +526,11 @@ function renderScoreboard() {
 document.getElementById("reset-btn").addEventListener("click", () => {
   if (!confirm("Are you sure you want to completely reset? This will wipe the teams and Series Score too.")) return;
   
-  localStorage.removeItem("creasecount_matchState_v7"); 
-  localStorage.removeItem("creasecount_actionHistory_v7");
+  localStorage.removeItem("creasecount_matchState_v8"); 
+  localStorage.removeItem("creasecount_actionHistory_v8");
   
   matchState = {
-    currentInnings: 1, target: null, isComplete: false, seriesScore: { 1: 0, 2: 0 }, inningsBattingTeam: { 1: 1, 2: 2 },
+    currentInnings: 1, target: null, maxOvers: 20, isComplete: false, seriesScore: { 1: 0, 2: 0 }, inningsBattingTeam: { 1: 1, 2: 2 },
     teams: { 1: { name: "", players: [] }, 2: { name: "", players: [] } },
     inningsData: {
       1: { totalRuns: 0, wickets: 0, totalBalls: 0, ballHistory: [], activeStrikerId: null, activeNonStrikerId: null, activeBowlerId: null, bowlingStats: {} },
@@ -522,7 +558,7 @@ document.getElementById("reset-btn").addEventListener("click", () => {
   setupScreen.classList.remove("hidden");
 });
 
-// --- OVERS LOG & SCORECARD ---
+// --- OVERS LOG & SCORECARD & CSV EXPORT ---
 document.getElementById("overs-view-btn").addEventListener("click", () => {
   const inn = matchState.currentInnings;
   const history = matchState.inningsData[inn].ballHistory;
@@ -573,6 +609,60 @@ document.getElementById("scorecard-btn").addEventListener("click", () => {
     container.innerHTML += html + `</table><hr class="console-divider" style="margin-top:15px;">`;
   }
   scorecardModal.classList.remove("hidden");
+});
+
+document.getElementById("export-csv-btn").addEventListener("click", () => {
+  if (!matchState) return;
+  let csvRows = [];
+  csvRows.push(["CREASECOUNT MATCH EXPORT"]);
+  csvRows.push([]);
+  csvRows.push(["SERIES SCORE"]);
+  csvRows.push([matchState.teams[1].name, matchState.seriesScore[1], "-", matchState.seriesScore[2], matchState.teams[2].name]);
+  csvRows.push([]);
+
+  for (let inn = 1; inn <= 2; inn++) {
+    const data = matchState.inningsData[inn];
+    if (data.totalBalls === 0 && data.totalRuns === 0) continue; 
+    
+    const batTeam = matchState.teams[getBatTeamId(inn)];
+    const bowlTeam = matchState.teams[getBowlTeamId(inn)];
+
+    csvRows.push([`${batTeam.name} INNINGS`, `${data.totalRuns}/${data.wickets}`, `Overs: ${formatOvers(data.totalBalls)} / ${matchState.maxOvers}`]);
+    csvRows.push([]);
+    csvRows.push(["BATTER", "RUNS", "BALLS", "4s", "6s", "STATUS"]);
+    batTeam.players.forEach(p => {
+      if (p.balls > 0 || p.id === data.activeStrikerId || p.id === data.activeNonStrikerId) {
+        let status = p.isOut ? "Out" : "Not Out";
+        csvRows.push([`"${p.name}"`, p.runs, p.balls, p.fours, p.sixes, status]);
+      }
+    });
+    csvRows.push([]);
+
+    csvRows.push(["BOWLER", "OVERS", "RUNS", "WICKETS"]);
+    Object.keys(data.bowlingStats).forEach(bId => {
+      const b = bowlTeam.players.find(x => x.id === bId);
+      if (b) {
+        const s = data.bowlingStats[bId];
+        csvRows.push([`"${b.name}"`, formatOvers(s.balls), s.runs, s.wickets]);
+      }
+    });
+    csvRows.push([]);
+    csvRows.push(["--------------------------------------------------"]);
+    csvRows.push([]);
+  }
+
+  const csvContent = csvRows.map(row => row.join(",")).join("\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  const dateStr = new Date().toISOString().split('T')[0];
+  link.setAttribute("download", `CreaseCount_MatchData_${dateStr}.csv`);
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 });
 
 document.getElementById("close-scorecard-btn").addEventListener("click", () => scorecardModal.classList.add("hidden"));
