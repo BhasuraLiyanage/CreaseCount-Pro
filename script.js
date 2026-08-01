@@ -5,7 +5,7 @@ let matchState = {
   isComplete: false,
   seriesScore: { 1: 0, 2: 0 },
   inningsBattingTeam: { 1: 1, 2: 2 }, 
-  matchHistoryArchive: [], // NEW: Stores completed matches for series CSV export
+  matchHistoryArchive: [], 
   teams: {
     1: { name: "", players: [] },
     2: { name: "", players: [] }
@@ -614,7 +614,7 @@ document.getElementById("scorecard-btn").addEventListener("click", () => {
   scorecardModal.classList.remove("hidden");
 });
 
-// --- UPDATED CSV EXPORT (INCLUDES ALL SERIES MATCHES) ---
+// --- UPDATED CSV EXPORT (FIXED DUPLICATE MATCH BUG) ---
 document.getElementById("export-csv-btn").addEventListener("click", () => {
   if (!matchState) return;
   let csvRows = [];
@@ -625,9 +625,12 @@ document.getElementById("export-csv-btn").addEventListener("click", () => {
   csvRows.push([matchState.teams[1].name, matchState.seriesScore[1], "-", matchState.seriesScore[2], matchState.teams[2].name]);
   csvRows.push([]);
 
-  // Combine archived matches + the current live match into an export pipeline
   let allMatchesToExport = [...matchState.matchHistoryArchive];
-  if (matchState.teams[1].name && matchState.teams[2].name) {
+  
+  const inn1Data = matchState.inningsData[1];
+  const liveMatchInProgress = !matchState.isComplete && (inn1Data.totalBalls > 0 || inn1Data.totalRuns > 0 || inn1Data.wickets > 0);
+
+  if (liveMatchInProgress) {
     allMatchesToExport.push({
       teams: matchState.teams,
       inningsBattingTeam: matchState.inningsBattingTeam,
@@ -645,7 +648,7 @@ document.getElementById("export-csv-btn").addEventListener("click", () => {
 
     for (let inn = 1; inn <= 2; inn++) {
       const data = matchObj.inningsData[inn];
-      if (!data || (data.totalBalls === 0 && data.totalRuns === 0)) continue;
+      if (!data || (data.totalBalls === 0 && data.totalRuns === 0 && data.wickets === 0)) continue;
       
       const batTeamId = matchObj.inningsBattingTeam[inn];
       const bowlTeamId = matchObj.inningsBattingTeam[inn === 1 ? 2 : 1];
