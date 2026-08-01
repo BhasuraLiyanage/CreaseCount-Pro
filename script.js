@@ -614,16 +614,26 @@ document.getElementById("scorecard-btn").addEventListener("click", () => {
   scorecardModal.classList.remove("hidden");
 });
 
-// --- UPDATED CSV EXPORT (FIXED DUPLICATE MATCH BUG) ---
+// --- UPDATED CSV EXPORT (AUTOMATED FLAT-FILE DATABASE) ---
 document.getElementById("export-csv-btn").addEventListener("click", () => {
   if (!matchState) return;
+  
   let csvRows = [];
   
-  csvRows.push(["CREASECOUNT SERIES REPORT"]);
-  csvRows.push([]);
-  csvRows.push(["SERIES SCORE"]);
-  csvRows.push([matchState.teams[1].name, matchState.seriesScore[1], "-", matchState.seriesScore[2], matchState.teams[2].name]);
-  csvRows.push([]);
+  csvRows.push([
+    "Match_Number",
+    "Innings",
+    "Batting_Team",
+    "Bowling_Team",
+    "Event_Sequence",
+    "Integer_Over",
+    "Over_Notation",
+    "Runs_Scored",
+    "Is_Extra",
+    "Is_Wicket",
+    "Cumulative_Runs",
+    "Cumulative_Wickets"
+  ]);
 
   let allMatchesToExport = [...matchState.matchHistoryArchive];
   
@@ -641,10 +651,6 @@ document.getElementById("export-csv-btn").addEventListener("click", () => {
 
   allMatchesToExport.forEach((matchObj, matchIndex) => {
     let matchNum = matchIndex + 1;
-    csvRows.push([`========================================`]);
-    csvRows.push([`MATCH ${matchNum}`]);
-    csvRows.push([`========================================`]);
-    csvRows.push([]);
 
     for (let inn = 1; inn <= 2; inn++) {
       const data = matchObj.inningsData[inn];
@@ -652,34 +658,43 @@ document.getElementById("export-csv-btn").addEventListener("click", () => {
       
       const batTeamId = matchObj.inningsBattingTeam[inn];
       const bowlTeamId = matchObj.inningsBattingTeam[inn === 1 ? 2 : 1];
-      const batTeam = matchObj.teams[batTeamId];
-      const bowlTeam = matchObj.teams[bowlTeamId];
+      const batTeamName = matchObj.teams[batTeamId] ? matchObj.teams[batTeamId].name : `Team ${batTeamId}`;
+      const bowlTeamName = matchObj.teams[bowlTeamId] ? matchObj.teams[bowlTeamId].name : `Team ${bowlTeamId}`;
 
-      if (!batTeam || !bowlTeam) continue;
+      let cumulativeRuns = 0;
+      let cumulativeWickets = 0;
+      let validBalls = 0;
 
-      csvRows.push([`${batTeam.name} INNINGS`, `${data.totalRuns}/${data.wickets}`, `Overs: ${formatOvers(data.totalBalls)} / ${matchObj.maxOvers}`]);
-      csvRows.push([]);
-      
-      csvRows.push(["BATTER", "RUNS", "BALLS", "4s", "6s", "STATUS"]);
-      batTeam.players.forEach(p => {
-        if (p.balls > 0 || p.runs > 0 || p.isOut) {
-          let status = p.isOut ? "Out" : "Not Out";
-          csvRows.push([`"${p.name}"`, p.runs, p.balls, p.fours, p.sixes, status]);
-        }
+      data.ballHistory.forEach((event, eventIndex) => {
+        cumulativeRuns += event.runs;
+        validBalls += event.ballsCounted;
+        
+        let isExtra = event.ballsCounted === 0 ? 1 : 0;
+        let isWicket = (event.label && event.label.toString().includes('W')) ? 1 : 0;
+        cumulativeWickets += isWicket;
+
+        let completedOvers = Math.floor(validBalls / 6);
+        let integerOver = (validBalls > 0 && validBalls % 6 === 0 && event.ballsCounted === 1) ? completedOvers : completedOvers + 1;
+        if (validBalls === 0) integerOver = 1; 
+
+        let remainder = validBalls % 6;
+        let overNotation = (validBalls > 0 && remainder === 0 && isExtra === 0) ? `${completedOvers}.0` : `${completedOvers}.${remainder}`;
+
+        csvRows.push([
+          matchNum,
+          inn,
+          `"${batTeamName}"`,
+          `"${bowlTeamName}"`,
+          eventIndex + 1,
+          integerOver,
+          overNotation,
+          event.runs,
+          isExtra,
+          isWicket,
+          cumulativeRuns,
+          cumulativeWickets
+        ]);
       });
-      csvRows.push([]);
-
-      csvRows.push(["BOWLER", "OVERS", "RUNS", "WICKETS"]);
-      Object.keys(data.bowlingStats).forEach(bId => {
-        const b = bowlTeam.players.find(x => x.id === bId);
-        if (b) {
-          const s = data.bowlingStats[bId];
-          csvRows.push([`"${b.name}"`, formatOvers(s.balls), s.runs, s.wickets]);
-        }
-      });
-      csvRows.push([]);
-      csvRows.push(["--------------------------------------------------"]);
-      csvRows.push([]);
     }
   });
 
@@ -688,8 +703,10 @@ document.getElementById("export-csv-btn").addEventListener("click", () => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.setAttribute("href", url);
+  
   const dateStr = new Date().toISOString().split('T')[0];
-  link.setAttribute("download", `CreaseCount_SeriesReport_${dateStr}.csv`);
+  link.setAttribute("download", `CreaseCount_Database_${dateStr}.csv`);
+  
   link.style.display = "none";
   document.body.appendChild(link);
   link.click();
