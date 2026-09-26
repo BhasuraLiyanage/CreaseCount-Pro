@@ -96,6 +96,7 @@
         <button class="btn score-btn" onclick="handleScoreAction(6, 1)">+6</button>
         <button class="btn score-btn wicket-btn" onclick="openRunsModal('out')">Wicket</button>
         <button class="btn score-btn extra-btn" onclick="openRunsModal('ex')">Extra</button>
+        <button class="btn score-btn wicket-btn" onclick="openRunsModal('runout')" style="background-color: #991b1b; grid-column: span 2;">Run Out</button>
       </div>
 
       <!-- Controls & Series Continuation -->
@@ -140,7 +141,7 @@
       <div id="scorecard-container" class="scorecard-container mt-2"></div>
       
       <!-- DATA EXTRACTION BUTTON -->
-      <button id="export-csv-btn" class="btn secondary-btn mt-3" style="background-color: #10b981; color: white;">Export Data to Excel (CSV)</button>
+      <button id="export-csv-btn" class="btn secondary-btn mt-3" style="background-color: #10b981; color: white;">Export Series Data (CSV)</button>
       
       <button id="close-scorecard-btn" class="btn primary-btn mt-2">Close Scorecard</button>
     </div>
