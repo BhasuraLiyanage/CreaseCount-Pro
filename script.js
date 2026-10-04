@@ -31,13 +31,13 @@ const removePlayerModal = document.getElementById("remove-player-modal");
 
 // --- LOCAL STORAGE ---
 function saveToLocalStorage() {
-  localStorage.setItem("creasecount_matchState_v10", JSON.stringify(matchState));
-  localStorage.setItem("creasecount_actionHistory_v10", JSON.stringify(actionHistory));
+  localStorage.setItem("creasecount_matchState_v11", JSON.stringify(matchState));
+  localStorage.setItem("creasecount_actionHistory_v11", JSON.stringify(actionHistory));
 }
 
 function loadFromLocalStorage() {
-  const savedState = localStorage.getItem("creasecount_matchState_v10");
-  const savedHistory = localStorage.getItem("creasecount_actionHistory_v10");
+  const savedState = localStorage.getItem("creasecount_matchState_v11");
+  const savedHistory = localStorage.getItem("creasecount_actionHistory_v11");
   
   if (savedState) {
     matchState = JSON.parse(savedState);
@@ -296,12 +296,21 @@ function handleScoreAction(runsToAdd, ballsCounted, isExtra = false, specialLabe
   data.totalBalls += ballsCounted;
   data.ballHistory.push({ runs: runsToAdd, ballsCounted: ballsCounted, label: specialLabel });
 
-  if (!isExtra && data.activeStrikerId) {
+  if (data.activeStrikerId) {
     const striker = matchState.teams[battingTeamId].players.find(p => p.id === data.activeStrikerId);
-    striker.runs += runsToAdd; striker.balls += ballsCounted;
-    if (runsToAdd === 4) striker.fours += 1;
-    if (runsToAdd === 6) striker.sixes += 1;
+    if (!isExtra) {
+      striker.runs += runsToAdd; 
+      striker.balls += ballsCounted;
+      if (runsToAdd === 4) striker.fours += 1;
+      if (runsToAdd === 6) striker.sixes += 1;
+    } else {
+      if (runsToAdd > 1) {
+        striker.runs += (runsToAdd - 1);
+        striker.balls += 1;
+      }
+    }
   }
+
   if (data.activeBowlerId) {
     data.bowlingStats[data.activeBowlerId].runs += runsToAdd;
     data.bowlingStats[data.activeBowlerId].balls += ballsCounted;
@@ -309,7 +318,7 @@ function handleScoreAction(runsToAdd, ballsCounted, isExtra = false, specialLabe
 
   if (!isExtra && runsToAdd % 2 !== 0) {
     swapStrike();
-  } else if (isExtra && (runsToAdd === 2 || runsToAdd === 4)) {
+  } else if (isExtra && runsToAdd % 2 === 0 && runsToAdd > 0) {
     swapStrike();
   }
   
@@ -335,12 +344,18 @@ function openRunsModal(type) {
   const optionsContainer = document.getElementById("dynamic-runs-options");
   optionsContainer.innerHTML = ""; 
 
-  // --- RUN OUT FIX: Recognize both normal Out and Run Out
-  if (type === 'out' || type === 'runout') {
-    desc.innerText = type === 'runout' ? "Select runs completed BEFORE the run out." : "Select physical runs scored during the wicket event.";
+  if (type === 'out') {
+    desc.innerText = "Select physical runs scored before the wicket (Striker is out).";
+    for(let i=0; i<=4; i++) optionsContainer.innerHTML += `<button class="btn score-btn" onclick="submitModalRuns(${i})">${i}</button>`;
+  } else if (type === 'runout') {
+    desc.innerText = "Select physical runs completed BEFORE the run out.";
     for(let i=0; i<=4; i++) optionsContainer.innerHTML += `<button class="btn score-btn" onclick="submitModalRuns(${i})">${i}</button>`;
   } else if (type === 'ex') {
-    desc.innerText = "Select penalty runs associated with this Extra.";
+    desc.innerText = "Select total penalty + physical runs for this Extra.";
+    for(let i=1; i<=7; i++) optionsContainer.innerHTML += `<button class="btn score-btn" onclick="submitModalRuns(${i})">${i}</button>`;
+    optionsContainer.innerHTML += `<div style="grid-column: 1 / -1; margin-top: 15px;"><button class="btn danger-btn" onclick="openRunsModal('ex_out')" style="width: 100%;">Wicket fell on this Extra</button></div>`;
+  } else if (type === 'ex_out') {
+    desc.innerText = "Wicket on Extra: Select total runs (penalty + physical).";
     for(let i=1; i<=7; i++) optionsContainer.innerHTML += `<button class="btn score-btn" onclick="submitModalRuns(${i})">${i}</button>`;
   }
   runsModal.classList.remove("hidden");
@@ -352,7 +367,27 @@ function submitModalRuns(runsSelected) {
   const data = matchState.inningsData[inn];
   const battingTeamId = getBatTeamId(inn);
   
-  if (pendingActionType === 'out' || pendingActionType === 'runout') {
+  if (pendingActionType === 'out') {
+    captureState();
+    const striker = matchState.teams[battingTeamId].players.find(p => p.id === data.activeStrikerId);
+    striker.isOut = true; 
+    striker.balls += 1; 
+    striker.runs += runsSelected;
+    
+    data.totalRuns += runsSelected; 
+    data.wickets += 1; 
+    data.totalBalls += 1;
+    data.ballHistory.push({ runs: runsSelected, ballsCounted: 1, label: runsSelected > 0 ? `W+${runsSelected}` : "W" });
+    
+    if (data.activeBowlerId) {
+      data.bowlingStats[data.activeBowlerId].runs += runsSelected;
+      data.bowlingStats[data.activeBowlerId].balls += 1;
+      data.bowlingStats[data.activeBowlerId].wickets += 1; 
+    }
+
+    processWicketTransition(runsSelected, striker.id, 1, false);
+
+  } else if (pendingActionType === 'runout' || pendingActionType === 'ex_out') {
     const striker = matchState.teams[battingTeamId].players.find(p => p.id === data.activeStrikerId);
     const nonStriker = matchState.teams[battingTeamId].players.find(p => p.id === data.activeNonStrikerId);
 
@@ -361,55 +396,76 @@ function submitModalRuns(runsSelected) {
       { id: nonStriker.id, name: nonStriker.name + " (Non-Striker)" }
     ];
 
-    // Check who was dismissed to handle run-out tracking perfectly
-    showSelectionModal(pendingActionType === 'runout' ? "Run Out!" : "Wicket!", "Who was dismissed?", options, (dismissedId) => {
+    showSelectionModal(pendingActionType === 'runout' ? "Run Out!" : "Wicket on Extra!", "Who was dismissed?", options, (dismissedId) => {
       captureState();
-      
       const dismissedPlayer = matchState.teams[battingTeamId].players.find(p => p.id === dismissedId);
       dismissedPlayer.isOut = true; 
       
-      striker.balls += 1; 
-      striker.runs += runsSelected;
-      
-      data.totalRuns += runsSelected; 
-      data.wickets += 1; 
-      data.totalBalls += 1;
+      let ballsToPass = 1;
+      let isExtra = false;
 
-      let label = pendingActionType === 'runout' ? "RO" : "W";
-      if (runsSelected > 0) label += `+${runsSelected}`;
-      data.ballHistory.push({ runs: runsSelected, ballsCounted: 1, label: label });
-      
-      if (data.activeBowlerId) {
-        data.bowlingStats[data.activeBowlerId].runs += runsSelected;
-        data.bowlingStats[data.activeBowlerId].balls += 1;
+      if (pendingActionType === 'runout') {
+        striker.balls += 1; 
+        striker.runs += runsSelected;
+        data.totalRuns += runsSelected; 
+        data.wickets += 1; 
+        data.totalBalls += 1;
         
-        // ONLY credit the bowler if it is a standard Wicket (not a run out)
-        if (pendingActionType === 'out') {
-          data.bowlingStats[data.activeBowlerId].wickets += 1; 
+        let label = "RO";
+        if (runsSelected > 0) label += `+${runsSelected}`;
+        data.ballHistory.push({ runs: runsSelected, ballsCounted: 1, label: label });
+        
+        if (data.activeBowlerId) {
+          data.bowlingStats[data.activeBowlerId].runs += runsSelected;
+          data.bowlingStats[data.activeBowlerId].balls += 1;
+        }
+      } else if (pendingActionType === 'ex_out') {
+        ballsToPass = 0;
+        isExtra = true;
+        data.totalRuns += runsSelected; 
+        data.wickets += 1; 
+        data.ballHistory.push({ runs: runsSelected, ballsCounted: 0, label: `E${runsSelected}+W` });
+        
+        if (runsSelected > 1) {
+          striker.runs += (runsSelected - 1);
+          striker.balls += 1;
+        }
+
+        if (data.activeBowlerId) {
+          data.bowlingStats[data.activeBowlerId].runs += runsSelected;
         }
       }
 
-      if (data.wickets >= matchState.teams[battingTeamId].players.length - 1) {
-        handleInningsTransition(); return;
-      } else {
-        promptForNewBatter("Incoming Batter", "Select the new player.", (newBatterId) => {
-          
-          if (data.activeStrikerId === dismissedId) {
-            data.activeStrikerId = newBatterId;
-          } else {
-            data.activeNonStrikerId = newBatterId;
-          }
-
-          if (runsSelected % 2 !== 0) {
-            swapStrike();
-          }
-          
-          checkOverAndInningsEnd(1); 
-        });
-      }
+      processWicketTransition(runsSelected, dismissedId, ballsToPass, isExtra);
     });
   } else if (pendingActionType === 'ex') {
     handleScoreAction(runsSelected, 0, true, `E${runsSelected}`);
+  }
+}
+
+function processWicketTransition(runsSelected, dismissedId, ballsCounted, isExtra) {
+  const inn = matchState.currentInnings;
+  const data = matchState.inningsData[inn];
+  const battingTeamId = getBatTeamId(inn);
+
+  if (data.wickets >= matchState.teams[battingTeamId].players.length - 1) {
+    handleInningsTransition(); 
+  } else {
+    promptForNewBatter("Incoming Batter", "Select the new player.", (newBatterId) => {
+      if (data.activeStrikerId === dismissedId) {
+        data.activeStrikerId = newBatterId;
+      } else {
+        data.activeNonStrikerId = newBatterId;
+      }
+
+      if (!isExtra && runsSelected % 2 !== 0) {
+        swapStrike();
+      } else if (isExtra && runsSelected % 2 === 0 && runsSelected > 0) {
+        swapStrike();
+      }
+      
+      checkOverAndInningsEnd(ballsCounted); 
+    });
   }
 }
 
@@ -559,8 +615,8 @@ function renderScoreboard() {
 document.getElementById("reset-btn").addEventListener("click", () => {
   if (!confirm("Are you sure you want to completely reset? This will wipe the teams and Series Score too.")) return;
   
-  localStorage.removeItem("creasecount_matchState_v10"); 
-  localStorage.removeItem("creasecount_actionHistory_v10");
+  localStorage.removeItem("creasecount_matchState_v11"); 
+  localStorage.removeItem("creasecount_actionHistory_v11");
   
   matchState = {
     currentInnings: 1, target: null, maxOvers: 20, isComplete: false, seriesScore: { 1: 0, 2: 0 }, inningsBattingTeam: { 1: 1, 2: 2 }, matchHistoryArchive: [],
